@@ -46,6 +46,7 @@ object UpdateHierarchyManager {
                   val idMap: mutable.Map[String, String] = mutable.Map()
                   idMap += (rootId -> rootId)
                   updateNodesModifiedInNodeList(nodes, nodesModified, request, idMap).map(modifiedNodeList => {
+
                       getChildrenHierarchy(modifiedNodeList, rootId, hierarchy, idMap, result._1, request).map(children => {
                           TelemetryManager.log("Children for root id :" + rootId +" :: " + JsonUtils.serialize(children))
                           updateHierarchyData(rootId, children, modifiedNodeList, request).map(node => {
@@ -364,6 +365,7 @@ object UpdateHierarchyManager {
 
     @throws[Exception]
     private def updateHierarchyRelatedData(childrenIds: Map[String, Int], depth: Int, parent: String, nodeList: List[Node], hierarchyStructure: Map[String, Map[String, Int]], enrichedNodeList: scala.collection.immutable.List[Node], request: Request, rootId: String)(implicit oec: OntologyEngineContext, ec: ExecutionContext): Future[List[Node]] = {
+        val rootResourceChange: Boolean = if (Platform.config.hasPath("root.resource.change")) Platform.config.getBoolean("root.resource.change") else true
         val futures = childrenIds.map(child => {
             val id = child._1
             val index = child._2 + 1
@@ -379,10 +381,9 @@ object UpdateHierarchyManager {
             } else {
 //                TelemetryManager.info("Get ContentNode as TempNode is null for ID: " + id)
                 getContentNode(id, HierarchyConstants.TAXONOMY_ID).map(node => {
-//                    val parentNode: Node = nodeList.find(p => p.getIdentifier.equals(parent)).orNull
-                        val parentNode: Node = if(nodeList.find(p => p.getIdentifier.equals(parent)).orNull == null) {
-                            if(nodeList.find(p => p.getIdentifier.equals(rootId)).orNull == null)
-                            nodeList.find(p => p.getIdentifier.equals(rootId+".img")).orNull
+                    val parentNode: Node = if (rootResourceChange && nodeList.find(p => p.getIdentifier.equals(parent)).orNull == null) {
+                        if (nodeList.find(p => p.getIdentifier.equals(rootId)).orNull == null)
+                            nodeList.find(p => p.getIdentifier.equals(rootId + ".img")).orNull
                         else
                             nodeList.find(p => p.getIdentifier.equals(rootId)).orNull
                     } else
@@ -409,7 +410,7 @@ object UpdateHierarchyManager {
                 }).flatMap(f => f) recoverWith { case e: CompletionException => throw e.getCause }
             }
         })
-        val outputNodesListFuture = if (CollectionUtils.isNotEmpty(futures)) {
+        val outputNodesListFuture = if (rootResourceChange && CollectionUtils.isNotEmpty(futures)) {
             val listOfFutures = Future.sequence(futures.toList)
             listOfFutures.map(f => f.flatten.distinct)
         } else
